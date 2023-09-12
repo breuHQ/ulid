@@ -1,13 +1,14 @@
 # Universally Unique Lexicographically Sortable Identifier
 
-[![Project status](https://img.shields.io/github/release/oklog/ulid.svg?style=flat-square)](https://github.com/oklog/ulid/releases/latest)
-![Build Status](https://github.com/oklog/ulid/actions/workflows/test.yml/badge.svg)
-[![Go Report Card](https://goreportcard.com/badge/oklog/ulid?cache=0)](https://goreportcard.com/report/oklog/ulid)
-[![Coverage Status](https://coveralls.io/repos/github/oklog/ulid/badge.svg?branch=master&cache=0)](https://coveralls.io/github/oklog/ulid?branch=master)
-[![go.dev reference](https://img.shields.io/badge/go.dev-reference-007d9c?logo=go&logoColor=white&style=flat-square)](https://pkg.go.dev/github.com/oklog/ulid/v2)
-[![Apache 2 licensed](https://img.shields.io/badge/license-Apache2-blue.svg)](https://raw.githubusercontent.com/oklog/ulid/master/LICENSE)
+![GitHub go.mod Go version (subdirectory of monorepo)](https://img.shields.io/github/go-mod/go-version/breuHQ/ulid)
+![GitHub release (with filter)](https://img.shields.io/github/v/release/breuHQ/ulid)
+![GitHub](https://img.shields.io/github/license/breuHQ/ulid)
 
 A Go port of [ulid/javascript](https://github.com/ulid/javascript) with binary format implemented.
+
+> This is a hard fork of `github.com/oklog/ulid` to support outputs to `uuid` format and then parsing them back to `ulid`.
+
+We needed a way to quickly support creating ULID's in a format that can be stored as `UUID` type in postgres. see
 
 ## Background
 
@@ -28,10 +29,6 @@ A ULID however:
 - Case insensitive
 - No special characters (URL safe)
 - Monotonic sort order (correctly detects and handles the same millisecond)
-
-> This is a hard fork of `github.com/oklog/ulid` to support outputs to `uuid` format and then parsing them back to `ulid`.
-
-We needed a way to quickly support creating ULID's in a format that can be stored as `UUID` type in postgres. see
 
 - [ULID & Primary Keys](https://blog.daveallie.com/ulid-primary-keys)
 

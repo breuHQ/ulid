@@ -615,6 +615,11 @@ func Monotonic(entropy io.Reader, inc uint64) *MonotonicEntropy {
 
 type rng interface{ Int63n(n int64) int64 }
 
+// LockedMonotonic returns a source of entropy that is cocnurrency safe
+func LockedMonotonic(entropy io.Reader, inc uint64) *LockedMonotonicReader {
+	return &LockedMonotonicReader{MonotonicReader: Monotonic(entropy, inc)}
+}
+
 // LockedMonotonicReader wraps a MonotonicReader with a sync.Mutex for safe
 // concurrent use.
 type LockedMonotonicReader struct {
