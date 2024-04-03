@@ -1,13 +1,12 @@
 # Universally Unique Lexicographically Sortable Identifier
 
-[![Project status](https://img.shields.io/github/release/oklog/ulid.svg?style=flat-square)](https://github.com/oklog/ulid/releases/latest)
-![Build Status](https://github.com/oklog/ulid/actions/workflows/test.yml/badge.svg)
-[![Go Report Card](https://goreportcard.com/badge/oklog/ulid?cache=0)](https://goreportcard.com/report/oklog/ulid)
-[![Coverage Status](https://coveralls.io/repos/github/oklog/ulid/badge.svg?branch=master&cache=0)](https://coveralls.io/github/oklog/ulid?branch=master)
-[![go.dev reference](https://img.shields.io/badge/go.dev-reference-007d9c?logo=go&logoColor=white&style=flat-square)](https://pkg.go.dev/github.com/oklog/ulid/v2)
-[![Apache 2 licensed](https://img.shields.io/badge/license-Apache2-blue.svg)](https://raw.githubusercontent.com/oklog/ulid/master/LICENSE)
+![GitHub go.mod Go version (subdirectory of monorepo)](https://img.shields.io/github/go-mod/go-version/breuHQ/ulid)
+![GitHub release (with filter)](https://img.shields.io/github/v/release/breuHQ/ulid)
+![GitHub](https://img.shields.io/github/license/breuHQ/ulid)
 
 A Go port of [ulid/javascript](https://github.com/ulid/javascript) with binary format implemented.
+
+> This is a hard fork of `github.com/oklog/ulid` to support outputs to `uuid` format and then parsing them back to `ulid`, primarily to work with Database's uuid format.
 
 ## Background
 
@@ -29,12 +28,47 @@ A ULID however:
 - No special characters (URL safe)
 - Monotonic sort order (correctly detects and handles the same millisecond)
 
+- [ULID & Primary Keys](https://blog.daveallie.com/ulid-primary-keys)
+
+To provide interop between postgres & go, we can add the following function to postgres.
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE OR REPLACE FUNCTION generate_ulid() RETURNS uuid
+    AS $$
+        SELECT (lpad(to_hex(floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint), 12, '0') || encode(gen_random_bytes(10), 'hex'))::uuid;
+    $$ LANGUAGE SQL;
+
+SELECT generate_ulid();
+
+--> 017eb31e-1440-b69e-d82f-5f0937f823c8
+```
+
+to create the table, we use
+
+```sql
+CREATE TABLE my_ulid_things(
+  id UUID NOT NULL DEFAULT generate_ulid(),
+  name TEXT NOT NULL,
+  PRIMARY KEY (id)
+);
+
+INSERT INTO my_ulid_things(name) VALUES ('foo');
+
+SELECT * FROM my_ulid_things;
+
+--                  id                  | name
+----------------------------------------+------
+-- 017eb31e-1440-b69e-d82f-5f0937f823c8 | foo
+```
+
 ## Install
 
 This package requires Go modules.
 
 ```shell
-go get github.com/oklog/ulid/v2
+go get go.breu.io/ulid
 ```
 
 ## Usage
@@ -61,8 +95,11 @@ and uses a source of entropy which is process-global,
 [monotonic](https://pkg.go.dev/github.com/oklog/ulid/v2#LockedMonotonicReader).
 
 ```go
-fmt.Println(ulid.Make())
-// 01G65Z755AFWAKHE12NY0CQ9FH
+id := ulid.Make()
+fmt.Println(id)
+// 01HA42XECY7VGQTS3GNV7QGQDH
+fmt.Println(id.UUIDString())
+// 018a882e-b99e-3ee1-7d64-70aecf785db1
 ```
 
 More advanced use cases should utilize
@@ -71,8 +108,11 @@ More advanced use cases should utilize
 ```go
 entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
 ms := ulid.Timestamp(time.Now())
-fmt.Println(ulid.New(ms, entropy))
+id := ulid.New(ms, entropy)
+fmt.Println(id)
 // 01G65Z755AFWAKHE12NY0CQ9FH
+fmt.Println(id.UUIDString())
+// 018a8837-43e8-d781-c12b-dea9acd8b114
 ```
 
 Care should be taken when providing a source of entropy.
@@ -109,7 +149,7 @@ smaller, etc. Consider UUIDs.
 This repo also provides a tool to generate and parse ULIDs at the command line.
 
 ```shell
-go install github.com/oklog/ulid/v2/cmd/ulid@latest
+go install go.breu.io/ulid@latest
 ```
 
 Usage:
@@ -120,6 +160,7 @@ Usage: ulid [-hlqz] [-f <format>] [parameters ...]
  -h, --help             print this help text
  -l, --local            when parsing, show local time instead of UTC
  -q, --quick            when generating, use non-crypto-grade entropy
+ -u, --uuid             when parsing or generating, print as UUID string
  -z, --zero             when generating, fix entropy to all-zeroes
 ```
 
@@ -134,6 +175,10 @@ $ ulid 01D78XZ44G0000000000000000
 Sun Mar 31 03:51:23.536 UTC 2019
 $ ulid --format=rfc3339 --local 01D78XZ44G0000000000000000
 2019-03-31T05:51:23.536+02:00
+$ ulid -u 01D78XZ44G0000000000000000
+0169d1df-9090-0000-0000-000000000000
+$ ulid --uuid
+0184ceda-2982-6f83-9645-7fc810743a30
 ```
 
 ## Specification
@@ -143,11 +188,13 @@ Below is the current specification of ULID as implemented in this repository.
 ### Components
 
 **Timestamp**
+
 - 48 bits
 - UNIX-time in milliseconds
 - Won't run out of space till the year 10889 AD
 
 **Entropy**
+
 - 80 bits
 - User defined entropy source.
 - Monotonicity within the same millisecond with [`ulid.Monotonic`](https://godoc.org/github.com/oklog/ulid#Monotonic)
@@ -157,7 +204,7 @@ Below is the current specification of ULID as implemented in this repository.
 [Crockford's Base32](http://www.crockford.com/wrmg/base32.html) is used as shown.
 This alphabet excludes the letters I, L, O, and U to avoid confusion and abuse.
 
-```
+```txt
 0123456789ABCDEFGHJKMNPQRSTVWXYZ
 ```
 
@@ -165,7 +212,7 @@ This alphabet excludes the letters I, L, O, and U to avoid confusion and abuse.
 
 The components are encoded as 16 octets. Each component is encoded with the Most Significant Byte first (network byte order).
 
-```
+```txt
 0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -181,7 +228,7 @@ The components are encoded as 16 octets. Each component is encoded with the Most
 
 ### String Representation
 
-```
+```txt
  01AN4Z07BY      79KA1307SR9X4MV3
 |----------|    |----------------|
  Timestamp           Entropy
@@ -200,7 +247,7 @@ go test ./...
 
 On a Intel Core i7 Ivy Bridge 2.7 GHz, MacOS 10.12.1 and Go 1.8.0beta1
 
-```
+```shell
 BenchmarkNew/WithCryptoEntropy-8      2000000        771 ns/op      20.73 MB/s   16 B/op   1 allocs/op
 BenchmarkNew/WithEntropy-8            20000000      65.8 ns/op     243.01 MB/s   16 B/op   1 allocs/op
 BenchmarkNew/WithoutEntropy-8         50000000      30.0 ns/op     534.06 MB/s   16 B/op   1 allocs/op

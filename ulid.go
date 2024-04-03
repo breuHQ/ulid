@@ -1,4 +1,5 @@
-// Copyright 2016 The Oklog Authors
+// Copyright 2016 The Oklog Authors.
+// Copyright 2023 Breu Inc.
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -18,6 +19,7 @@ import (
 	"bytes"
 	"database/sql/driver"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"io"
 	"math"
@@ -25,6 +27,8 @@ import (
 	"math/rand"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 /*
@@ -171,75 +175,89 @@ func ParseStrict(ulid string) (id ULID, err error) {
 
 func parse(v []byte, strict bool, id *ULID) error {
 	// Check if a base32 encoded ULID is the right length.
-	if len(v) != EncodedSize {
+	// if len(v) != EncodedULIDSize {
+	// 	return ErrDataSize
+	// }
+
+	switch len(v) {
+	case EncodedUUIDSize:
+		uid, err := uuid.Parse(string(v))
+		if err != nil {
+			return err
+		}
+
+		*id = ULID(uid)
+		return nil
+
+	case EncodedULIDSize:
+		// Check if all the characters in a base32 encoded ULID are part of the
+		// expected base32 character set.
+		if strict &&
+			(dec[v[0]] == 0xFF ||
+				dec[v[1]] == 0xFF ||
+				dec[v[2]] == 0xFF ||
+				dec[v[3]] == 0xFF ||
+				dec[v[4]] == 0xFF ||
+				dec[v[5]] == 0xFF ||
+				dec[v[6]] == 0xFF ||
+				dec[v[7]] == 0xFF ||
+				dec[v[8]] == 0xFF ||
+				dec[v[9]] == 0xFF ||
+				dec[v[10]] == 0xFF ||
+				dec[v[11]] == 0xFF ||
+				dec[v[12]] == 0xFF ||
+				dec[v[13]] == 0xFF ||
+				dec[v[14]] == 0xFF ||
+				dec[v[15]] == 0xFF ||
+				dec[v[16]] == 0xFF ||
+				dec[v[17]] == 0xFF ||
+				dec[v[18]] == 0xFF ||
+				dec[v[19]] == 0xFF ||
+				dec[v[20]] == 0xFF ||
+				dec[v[21]] == 0xFF ||
+				dec[v[22]] == 0xFF ||
+				dec[v[23]] == 0xFF ||
+				dec[v[24]] == 0xFF ||
+				dec[v[25]] == 0xFF) {
+			return ErrInvalidCharacters
+		}
+
+		// Check if the first character in a base32 encoded ULID will overflow. This
+		// happens because the base32 representation encodes 130 bits, while the
+		// ULID is only 128 bits.
+		//
+		// See https://github.com/oklog/ulid/issues/9 for details.
+		if v[0] > '7' {
+			return ErrOverflow
+		}
+
+		// Use an optimized unrolled loop (from https://github.com/RobThree/NUlid)
+		// to decode a base32 ULID.
+
+		// 6 bytes timestamp (48 bits)
+		(*id)[0] = (dec[v[0]] << 5) | dec[v[1]]
+		(*id)[1] = (dec[v[2]] << 3) | (dec[v[3]] >> 2)
+		(*id)[2] = (dec[v[3]] << 6) | (dec[v[4]] << 1) | (dec[v[5]] >> 4)
+		(*id)[3] = (dec[v[5]] << 4) | (dec[v[6]] >> 1)
+		(*id)[4] = (dec[v[6]] << 7) | (dec[v[7]] << 2) | (dec[v[8]] >> 3)
+		(*id)[5] = (dec[v[8]] << 5) | dec[v[9]]
+
+		// 10 bytes of entropy (80 bits)
+		(*id)[6] = (dec[v[10]] << 3) | (dec[v[11]] >> 2)
+		(*id)[7] = (dec[v[11]] << 6) | (dec[v[12]] << 1) | (dec[v[13]] >> 4)
+		(*id)[8] = (dec[v[13]] << 4) | (dec[v[14]] >> 1)
+		(*id)[9] = (dec[v[14]] << 7) | (dec[v[15]] << 2) | (dec[v[16]] >> 3)
+		(*id)[10] = (dec[v[16]] << 5) | dec[v[17]]
+		(*id)[11] = (dec[v[18]] << 3) | dec[v[19]]>>2
+		(*id)[12] = (dec[v[19]] << 6) | (dec[v[20]] << 1) | (dec[v[21]] >> 4)
+		(*id)[13] = (dec[v[21]] << 4) | (dec[v[22]] >> 1)
+		(*id)[14] = (dec[v[22]] << 7) | (dec[v[23]] << 2) | (dec[v[24]] >> 3)
+		(*id)[15] = (dec[v[24]] << 5) | dec[v[25]]
+
+		return nil
+	default:
 		return ErrDataSize
 	}
-
-	// Check if all the characters in a base32 encoded ULID are part of the
-	// expected base32 character set.
-	if strict &&
-		(dec[v[0]] == 0xFF ||
-			dec[v[1]] == 0xFF ||
-			dec[v[2]] == 0xFF ||
-			dec[v[3]] == 0xFF ||
-			dec[v[4]] == 0xFF ||
-			dec[v[5]] == 0xFF ||
-			dec[v[6]] == 0xFF ||
-			dec[v[7]] == 0xFF ||
-			dec[v[8]] == 0xFF ||
-			dec[v[9]] == 0xFF ||
-			dec[v[10]] == 0xFF ||
-			dec[v[11]] == 0xFF ||
-			dec[v[12]] == 0xFF ||
-			dec[v[13]] == 0xFF ||
-			dec[v[14]] == 0xFF ||
-			dec[v[15]] == 0xFF ||
-			dec[v[16]] == 0xFF ||
-			dec[v[17]] == 0xFF ||
-			dec[v[18]] == 0xFF ||
-			dec[v[19]] == 0xFF ||
-			dec[v[20]] == 0xFF ||
-			dec[v[21]] == 0xFF ||
-			dec[v[22]] == 0xFF ||
-			dec[v[23]] == 0xFF ||
-			dec[v[24]] == 0xFF ||
-			dec[v[25]] == 0xFF) {
-		return ErrInvalidCharacters
-	}
-
-	// Check if the first character in a base32 encoded ULID will overflow. This
-	// happens because the base32 representation encodes 130 bits, while the
-	// ULID is only 128 bits.
-	//
-	// See https://github.com/oklog/ulid/issues/9 for details.
-	if v[0] > '7' {
-		return ErrOverflow
-	}
-
-	// Use an optimized unrolled loop (from https://github.com/RobThree/NUlid)
-	// to decode a base32 ULID.
-
-	// 6 bytes timestamp (48 bits)
-	(*id)[0] = (dec[v[0]] << 5) | dec[v[1]]
-	(*id)[1] = (dec[v[2]] << 3) | (dec[v[3]] >> 2)
-	(*id)[2] = (dec[v[3]] << 6) | (dec[v[4]] << 1) | (dec[v[5]] >> 4)
-	(*id)[3] = (dec[v[5]] << 4) | (dec[v[6]] >> 1)
-	(*id)[4] = (dec[v[6]] << 7) | (dec[v[7]] << 2) | (dec[v[8]] >> 3)
-	(*id)[5] = (dec[v[8]] << 5) | dec[v[9]]
-
-	// 10 bytes of entropy (80 bits)
-	(*id)[6] = (dec[v[10]] << 3) | (dec[v[11]] >> 2)
-	(*id)[7] = (dec[v[11]] << 6) | (dec[v[12]] << 1) | (dec[v[13]] >> 4)
-	(*id)[8] = (dec[v[13]] << 4) | (dec[v[14]] >> 1)
-	(*id)[9] = (dec[v[14]] << 7) | (dec[v[15]] << 2) | (dec[v[16]] >> 3)
-	(*id)[10] = (dec[v[16]] << 5) | dec[v[17]]
-	(*id)[11] = (dec[v[18]] << 3) | dec[v[19]]>>2
-	(*id)[12] = (dec[v[19]] << 6) | (dec[v[20]] << 1) | (dec[v[21]] >> 4)
-	(*id)[13] = (dec[v[21]] << 4) | (dec[v[22]] >> 1)
-	(*id)[14] = (dec[v[22]] << 7) | (dec[v[23]] << 2) | (dec[v[24]] >> 3)
-	(*id)[15] = (dec[v[24]] << 5) | dec[v[25]]
-
-	return nil
 }
 
 // MustParse is a convenience function equivalent to Parse that panics on failure
@@ -271,9 +289,28 @@ func (id ULID) Bytes() []byte {
 // (26 characters, non-standard base 32) e.g. 01AN4Z07BY79KA1307SR9X4MV3.
 // Format: tttttttttteeeeeeeeeeeeeeee where t is time and e is entropy.
 func (id ULID) String() string {
-	ulid := make([]byte, EncodedSize)
+	ulid := make([]byte, EncodedULIDSize)
 	_ = id.MarshalTextTo(ulid)
 	return string(ulid)
+}
+
+// UUIDString returns an UUID representation of the ULID
+// (36 characters, 32 hex encoded repr plus 4 dashes)
+// e.g. 01AN4Z07BY79KA1307SR9X4MV3 will be 015549f0-1d7e-3a66-a08c-07ce13d25363
+func (id ULID) UUIDString() string {
+	var buf [36]byte
+
+	hex.Encode(buf[:], id[:4])
+	buf[8] = '-'
+	hex.Encode(buf[9:13], id[4:6])
+	buf[13] = '-'
+	hex.Encode(buf[14:18], id[6:8])
+	buf[18] = '-'
+	hex.Encode(buf[19:23], id[8:10])
+	buf[23] = '-'
+	hex.Encode(buf[24:], id[10:])
+
+	return string(buf[:])
 }
 
 // MarshalBinary implements the encoding.BinaryMarshaler interface by
@@ -312,7 +349,7 @@ const Encoding = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 // MarshalText implements the encoding.TextMarshaler interface by
 // returning the string encoded ULID.
 func (id ULID) MarshalText() ([]byte, error) {
-	ulid := make([]byte, EncodedSize)
+	ulid := make([]byte, EncodedULIDSize)
 	return ulid, id.MarshalTextTo(ulid)
 }
 
@@ -322,7 +359,7 @@ func (id ULID) MarshalTextTo(dst []byte) error {
 	// Optimized unrolled loop ahead.
 	// From https://github.com/RobThree/NUlid
 
-	if len(dst) != EncodedSize {
+	if len(dst) != EncodedULIDSize {
 		return ErrBufferSize
 	}
 
@@ -390,8 +427,11 @@ var dec = [...]byte{
 	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 }
 
-// EncodedSize is the length of a text encoded ULID.
-const EncodedSize = 26
+// EncodedULIDSize is the length of a text encoded ULID.
+const EncodedULIDSize = 26
+
+// Encoded UUIDSize is the length of a text encoded UUID.
+const EncodedUUIDSize = 36
 
 // UnmarshalText implements the encoding.TextUnmarshaler interface by
 // parsing the data as string encoded ULID.
@@ -575,6 +615,11 @@ func Monotonic(entropy io.Reader, inc uint64) *MonotonicEntropy {
 }
 
 type rng interface{ Int63n(n int64) int64 }
+
+// LockedMonotonic returns a source of entropy that is cocnurrency safe
+func LockedMonotonic(entropy io.Reader, inc uint64) *LockedMonotonicReader {
+	return &LockedMonotonicReader{MonotonicReader: Monotonic(entropy, inc)}
+}
 
 // LockedMonotonicReader wraps a MonotonicReader with a sync.Mutex for safe
 // concurrent use.

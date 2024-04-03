@@ -26,7 +26,7 @@ import (
 	"testing/quick"
 	"time"
 
-	"github.com/oklog/ulid/v2"
+	"go.breu.io/ulid"
 )
 
 func ExampleULID() {
@@ -148,6 +148,18 @@ func testULID(mk func(uint64, io.Reader) ulid.ULID) func(*testing.T) {
 	}
 }
 
+func TestUUID(t *testing.T) {
+	id := ulid.Make()
+	uuidstr := id.UUIDString()
+
+	t.Run("UUIDString", func(t *testing.T) {
+		parsed := ulid.MustParse(uuidstr)
+		if parsed != id {
+			t.Errorf("parsed %q, want %q", parsed, id)
+		}
+	})
+}
+
 func TestRoundTrips(t *testing.T) {
 	t.Parallel()
 
@@ -215,7 +227,7 @@ func TestParseStrictInvalidCharacters(t *testing.T) {
 	}
 	testCases := []testCase{}
 	base := "0000XSNJG0MQJHBF4QX1EFD6Y3"
-	for i := 0; i < ulid.EncodedSize; i++ {
+	for i := 0; i < ulid.EncodedULIDSize; i++ {
 		testCases = append(testCases, testCase{
 			name:  fmt.Sprintf("Invalid 0xFF at index %d", i),
 			input: base[:i] + "\xff" + base[i+1:],
@@ -765,7 +777,7 @@ func BenchmarkString(b *testing.B) {
 
 func BenchmarkMarshal(b *testing.B) {
 	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
-	buf := make([]byte, ulid.EncodedSize)
+	buf := make([]byte, ulid.EncodedULIDSize)
 	id := ulid.MustNew(123456, entropy)
 
 	b.Run("Text", func(b *testing.B) {

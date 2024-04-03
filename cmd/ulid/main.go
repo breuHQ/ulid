@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oklog/ulid/v2"
 	getopt "github.com/pborman/getopt/v2"
+	"go.breu.io/ulid"
 )
 
 const (
